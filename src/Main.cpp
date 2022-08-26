@@ -5,8 +5,8 @@
 #include <map>
 #include <algorithm>
 #include <random>
-
-constexpr float learning_rate = 0.01f;
+#include "Perceptron.hpp"
+#include "AdaptiveLinearNeuron.hpp"
 
 using namespace csv;
 
@@ -18,121 +18,8 @@ float ConvStrToFlt(const std::string& s) {
     return (iss.eof() && !iss.fail() ? f : -FLT_MAX); // 
 }
 
-struct Sample {
-    std::vector<float> factors;
-    int label;
-
-    float GetInput(int x) const {
-        if (x == 0) {
-            return 1.0f;
-        }
-        else {
-            return factors[x - 1];
-        }
-    }
-};
-
-class BinaryClassifier {
-public:
-    virtual float PredictChance(const Sample& sample) = 0; // phi(z) func
-    virtual bool PredictBinary(const Sample& sample) = 0; // binary value
-    virtual int PredictClass(const Sample& sample) = 0; // pos or neg class
-
-    virtual void Train(const std::vector<Sample>& training_set) = 0;
-protected:
-    std::vector<float> weights;
-};
-
-class Perceptron : public BinaryClassifier {
-public:
-    virtual float PredictChance(const Sample& sample) {
-        float z = 0.0f;
-        for (int k = 0; k < weights.size(); k++) {
-            z += weights[k] * sample.GetInput(k);
-        }
-        return z;
-    }
-
-    virtual bool PredictBinary(const Sample& sample) {
-        return (PredictChance(sample) < 0.0f ? false : true);
-    }
-
-    virtual int PredictClass(const Sample& sample) {
-        return  (PredictChance(sample) < 0.0f ? -1 : 1);
-    }
-
-    virtual void Train(const std::vector<Sample>& training_set) {
-        weights.resize(training_set.back().factors.size() + 1);
-        std::fill(weights.begin(), weights.end(), 0.0f);
-
-        for (int i = 0; i < 1000; i++) {
-            for (int j = 0; j < training_set.size(); j++) {
-                // compute the result and misclassification error
-                int classification = PredictClass(training_set[j]);
-
-                // compute adjustment
-                for (int k = 0; k < weights.size(); k++) {
-                    weights[k] += learning_rate * (training_set[j].label - classification) * training_set[j].GetInput(k);
-                }
-            }
-        }
-    }
-};
-
-template<class T>
-class MultiClassifier {
-public:
-    MultiClassifier() : num_ids(0) {}
-
-    int GetID(const std::string& s) {
-        int id;
-        auto iter = class_ids.find(s);
-        if (iter == class_ids.end()) {
-            id = num_ids++;
-            class_ids.emplace(s, id);
-        }
-        else {
-            id = iter->second;
-        }
-        return id;
-    }
-
-    void Train(const std::vector<Sample>& training_set) {
-        int num_factors = training_set.back().factors.size();
-        // for each id, create a binary classifier that determines the sample as "part of class x" or "not part of class x"
-        std::vector<Sample> onevall_set = training_set;
-        for (int i = 0; i < num_factors; i++) {
-            for (int j = 0; j < training_set.size(); j++) {
-                onevall_set[j].label = (training_set[j].label == i ? 1 : -1);
-            }
-
-            T binclassifier;
-            binclassifier.Train(onevall_set);
-
-            classifiers.push_back(binclassifier);
-        }
-    }
-
-    int PredictClass(const Sample& s) {
-        float best_chance = -FLT_MAX;
-        int best_class = 0;
-        for (int i = 0; i < num_ids; i++) {
-            float z = classifiers[i].PredictChance(s);
-            if (z > best_chance) {
-                best_chance = z;
-                best_class = i;
-            }
-        }
-        return best_class;
-    }
-private:
-    int num_ids;
-    std::map<std::string, int> class_ids;
-    std::vector<T> classifiers;
-};
-
 float program() {
-    MultiClassifier<Perceptron> classifier;
+    MultiClassifier<Adaline> classifier;
     std::vector<Sample> data_set;
 
     CSVReader reader("iris.csv");
@@ -213,7 +100,9 @@ float program() {
 }
 
 int main() {
-    int num_tests = 1024;
+    srand(time(nullptr));
+
+    int num_tests = 128;
     float mcr = 0.0f;
     for (int i = 0; i < num_tests; i++) {
         mcr += program();
